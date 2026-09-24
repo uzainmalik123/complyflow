@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Node / Next.js (web)
+web/node_modules/
+web/.next/
+web/out/
+web/build/
+*.tsbuildinfo
+web/next-env.d.ts
+
+# Database & local data
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store

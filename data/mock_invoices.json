@@ -1,0 +1,103 @@
+[
+  {
+    "invoice_id": "INV-1001",
+    "vendor_name": "Acme Office Supplies",
+    "vendor_id": "V-001",
+    "invoice_date": "2026-09-01",
+    "due_date": "2026-09-30",
+    "currency": "USD",
+    "line_items": [
+      {"description": "Office chairs x10", "quantity": 10, "unit_price": 120.00, "total": 1200.00},
+      {"description": "Standing desks x5", "quantity": 5, "unit_price": 300.00, "total": 1500.00}
+    ],
+    "total_amount": 2700.00,
+    "po_number": "PO-4501",
+    "raw_text": "INVOICE\nAcme Office Supplies\nInvoice #: INV-1001\nDate: 2026-09-01\nDue: 2026-09-30\nPO#: PO-4501\n\nOffice chairs x10 @ $120.00 = $1200.00\nStanding desks x5 @ $300.00 = $1500.00\n\nTotal: $2700.00 USD"
+  },
+  {
+    "invoice_id": "INV-1002",
+    "vendor_name": "CloudNet Hosting",
+    "vendor_id": "V-002",
+    "invoice_date": "2026-09-03",
+    "due_date": "2026-09-17",
+    "currency": "USD",
+    "line_items": [
+      {"description": "Cloud hosting - September", "quantity": 1, "unit_price": 8500.00, "total": 8500.00}
+    ],
+    "total_amount": 8500.00,
+    "po_number": null,
+    "raw_text": "CloudNet Hosting Services\nInvoice: INV-1002\nDate: 09/03/2026\nDue: 09/17/2026\n\nCloud hosting - September: $8,500.00\n\nTotal Due: $8,500.00\n\nNote: No PO on file for this vendor."
+  },
+  {
+    "invoice_id": "INV-1003",
+    "vendor_name": "Acme Office Supplies",
+    "vendor_id": "V-001",
+    "invoice_date": "2026-09-01",
+    "due_date": "2026-09-30",
+    "currency": "USD",
+    "line_items": [
+      {"description": "Office chairs x10", "quantity": 10, "unit_price": 120.00, "total": 1200.00},
+      {"description": "Standing desks x5", "quantity": 5, "unit_price": 300.00, "total": 1500.00}
+    ],
+    "total_amount": 2700.00,
+    "po_number": "PO-4501",
+    "raw_text": "INVOICE\nAcme Office Supplies\nInvoice #: INV-1003\nDate: 2026-09-01\nDue: 2026-09-30\nPO#: PO-4501\n\n(duplicate submission of INV-1001)\n\nOffice chairs x10 @ $120.00 = $1200.00\nStanding desks x5 @ $300.00 = $1500.00\n\nTotal: $2700.00 USD"
+  },
+  {
+    "invoice_id": "INV-1004",
+    "vendor_name": "Quantum Consulting Group",
+    "vendor_id": "V-999",
+    "invoice_date": "2026-09-05",
+    "due_date": "2026-09-20",
+    "currency": "USD",
+    "line_items": [
+      {"description": "Strategic advisory retainer", "quantity": 1, "unit_price": 45000.00, "total": 45000.00}
+    ],
+    "total_amount": 45000.00,
+    "po_number": "PO-9911",
+    "raw_text": "Quantum Consulting Group\nInvoice #: INV-1004\nDate: 2026-09-05\nPO#: PO-9911\n\nStrategic advisory retainer: $45,000.00\n\nTotal: $45,000.00 USD\n\n(Vendor not in approved vendor master list)"
+  },
+  {
+    "invoice_id": "INV-1005",
+    "vendor_name": "Metro Print & Design",
+    "vendor_id": "V-014",
+    "invoice_date": "2026-09-08",
+    "due_date": "2026-09-22",
+    "currency": "USD",
+    "line_items": [
+      {"description": "Marketing brochures, 500 units", "quantity": 500, "unit_price": 1.20, "total": 600.00}
+    ],
+    "total_amount": 600.00,
+    "po_number": "PO-4600",
+    "raw_text": "Metro Print & Design\nInvoice: INV-1005\nDate: 2026-09-08\nPO#: PO-4600\n\nMarketing brochures, 500 units @ $1.20 = $600.00\n\nTotal: $600.00"
+  },
+  {
+    "invoice_id": "INV-1006",
+    "vendor_name": "CloudNet Hosting",
+    "vendor_id": "V-002",
+    "invoice_date": "2026-09-10",
+    "due_date": "2026-09-24",
+    "currency": "USD",
+    "line_items": [
+      {"description": "Cloud hosting - October (prepay)", "quantity": 1, "unit_price": 8500.00, "total": 8500.00},
+      {"description": "Emergency support surcharge", "quantity": 1, "unit_price": 12000.00, "total": 12000.00}
+    ],
+    "total_amount": 20500.00,
+    "po_number": "PO-4502",
+    "raw_text": "CloudNet Hosting Services\nInvoice: INV-1006\nDate: 09/10/2026\nPO#: PO-4502\n\nCloud hosting - October (prepay): $8,500.00\nEmergency support surcharge: $12,000.00\n\nTotal Due: $20,500.00"
+  },
+  {
+    "invoice_id": "INV-1007",
+    "vendor_name": "Bright Legal Partners",
+    "vendor_id": "V-021",
+    "invoice_date": "2026-09-11",
+    "due_date": "2026-09-25",
+    "currency": "USD",
+    "line_items": [
+      {"description": "Contract review services, 14 hrs", "quantity": 14, "unit_price": 250.00, "total": 3500.00}
+    ],
+    "total_amount": 3499.99,
+    "po_number": "PO-4610",
+    "raw_text": "Bright Legal Partners\nInvoice: INV-1007\nDate: 2026-09-11\nPO#: PO-4610\n\nContract review services, 14 hrs @ $250.00 = $3500.00\n\nTotal: $3499.99\n\n(Note: line item total and invoice total do not match)"
+  }
+]
