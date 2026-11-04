@@ -9,7 +9,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { processInvoice } from "@/lib/pipeline";
+import { checkTotals, processInvoice } from "@/lib/pipeline";
 import { POST } from "@/app/api/process-invoice/route";
 
 const mockCreate = vi.hoisted(() => vi.fn());
@@ -360,5 +360,90 @@ describe("POST /api/process-invoice", () => {
     } finally {
       db.close();
     }
+  });
+});
+// --- checkTotals: deterministic, no model involved ---------------------------
+
+const mockInvoices = JSON.parse(
+  fs.readFileSync(path.resolve(process.cwd(), "..", "data", "mock_invoices.json"), "utf8")
+) as (Record<string, unknown> & { invoice_id: string; raw_text: string })[];
+const mockInvoice = (id: string) => mockInvoices.find((inv) => inv.invoice_id === id)!;
+
+describe("checkTotals", () => {
+  it("catches the one-cent mismatch on INV-1007", () => {
+    const result = checkTotals(mockInvoice("INV-1007"));
+    expect(result.passed).toBe(0);
+    expect(result.detail).toContain(
+      "Line items sum to 3500.00, but the invoice total is 3499.99 (off by 0.01)"
+    );
+  });
+
+  it.each(["INV-1001", "INV-1002", "INV-1003", "INV-1004", "INV-1005", "INV-1006"])(
+    "passes %s",
+    (id) => {
+      expect(checkTotals(mockInvoice(id)).passed).toBe(1);
+    }
+  );
+
+  it("doesn't give the answer away in INV-1007's raw text", () => {
+    expect(mockInvoice("INV-1007").raw_text.toLowerCase()).not.toContain("do not match");
+  });
+
+  it("ignores float noise (500 * 1.2, 0.1 + 0.2)", () => {
+    const result = checkTotals({
+      total_amount: 600.3,
+      line_items: [
+        { description: "Brochures", quantity: 500, unit_price: 1.2, total: 600.0 },
+        { description: "Stamp", quantity: 1, unit_price: 0.1, total: 0.1 },
+        { description: "Sticker", quantity: 1, unit_price: 0.2, total: 0.2 },
+      ],
+    });
+    expect(result.passed).toBe(1);
+  });
+
+  it("catches a line whose quantity x unit_price is off", () => {
+    const result = checkTotals({
+      total_amount: 3500.01,
+      line_items: [{ description: "Review", quantity: 14, unit_price: 250, total: 3500.01 }],
+    });
+    expect(result.passed).toBe(0);
+    expect(result.detail).toContain("Review: 14 x 250 = 3500.00, but the line total is 3500.01");
+  });
+
+  it("parses currency strings", () => {
+    const result = checkTotals({
+      total_amount: "$8,500.00",
+      line_items: [{ description: "Hosting", quantity: "1", unit_price: "$8,500.00", total: "8,500" }],
+    });
+    expect(result.passed).toBe(1);
+  });
+
+  it("fails when there is nothing to verify", () => {
+    expect(checkTotals({ total_amount: 100 }).passed).toBe(0);
+    expect(checkTotals({ line_items: [{ total: 100 }] }).passed).toBe(0);
+  });
+
+  it("overrides the model's totals_match verdict in the pipeline", async () => {
+    mockAgentReplies(
+      { ...EXTRACTION, total_amount: 2699.99, totals_match: true },
+      COMPLIANCE,
+      { decision: "flagged_for_review", reason: "Totals do not match." }
+    );
+    const result = await processInvoice("INVOICE\nAcme Office Supplies\nTotal: $2699.99");
+
+    expect(result.compliance.map((c) => c.check_name)).toEqual(
+      COMPLIANCE.map((c) => c.check_name)
+    );
+    const totals = result.compliance.find((c) => c.check_name === "totals_match")!;
+    expect(totals.passed).toBe(0);
+    expect(totals.detail).toContain("off by 0.01");
+
+    // The approval agent sees the deterministic verdict, not the model's.
+    const approvalInput = JSON.parse(mockCreate.mock.calls[2][0].input as string) as {
+      compliance_results: { check_name: string; passed: number }[];
+    };
+    expect(
+      approvalInput.compliance_results.find((c) => c.check_name === "totals_match")?.passed
+    ).toBe(0);
   });
 });

@@ -18,6 +18,7 @@ named exactly those 3 strings.
 import json
 import os
 import sqlite3
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
 from azure.ai.projects import AIProjectClient
@@ -56,6 +57,80 @@ def ask_agent(client, agent_name: str, prompt: str) -> dict:
     return json.loads(cleaned)
 
 
+TOTALS_CHECK = "totals_match"
+CENT = Decimal("0.01")
+
+
+def to_money(value):
+    """Parse an extracted amount ("$1,200.00", 1200, "1200") into a Decimal, or None."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        amount = Decimal(str(value).replace("$", "").replace(",", "").strip())
+    except InvalidOperation:
+        return None
+    return amount if amount.is_finite() else None
+
+
+def to_cents(amount: Decimal) -> Decimal:
+    return amount.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def check_totals(extracted: dict) -> dict:
+    """Deterministic totals_match check, replacing the model's own judgement.
+
+    Each line's quantity x unit_price must equal its total, and the line totals
+    must sum to total_amount, to the cent. The model only reads the numbers.
+    """
+    def result(passed, detail):
+        return {"check_name": TOTALS_CHECK, "passed": passed, "detail": detail}
+
+    items = extracted.get("line_items")
+    if not isinstance(items, list) or not items:
+        return result(False, "No line items were extracted, so the total could not be verified.")
+    invoice_total = to_money(extracted.get("total_amount"))
+    if invoice_total is None:
+        return result(False, "No invoice total was extracted, so it could not be verified.")
+
+    problems = []
+    line_sum = Decimal("0")
+    for index, item in enumerate(items, start=1):
+        item = item if isinstance(item, dict) else {}
+        label = str(item.get("description") or f"Line {index}").strip()
+        total = to_money(item.get("total"))
+        if total is None:
+            problems.append(f"{label} has no line total")
+            continue
+        line_sum += to_cents(total)
+        quantity = to_money(item.get("quantity"))
+        unit_price = to_money(item.get("unit_price"))
+        if quantity is not None and unit_price is not None:
+            computed = to_cents(quantity * unit_price)
+            if computed != to_cents(total):
+                problems.append(
+                    f"{label}: {quantity} x {unit_price} = {computed}, but the line total is {to_cents(total)}"
+                )
+
+    expected = to_cents(invoice_total)
+    if line_sum != expected:
+        problems.append(
+            f"Line items sum to {line_sum}, but the invoice total is {expected} (off by {abs(line_sum - expected)})"
+        )
+
+    if problems:
+        return result(False, "; ".join(problems) + ".")
+    return result(True, f"Line items sum to {line_sum}, matching the invoice total to the cent.")
+
+
+def with_totals_check(checks: list, totals: dict) -> list:
+    """Swap the model's totals_match verdict (if any) for the deterministic one."""
+    names = [c.get("check_name") if isinstance(c, dict) else None for c in checks]
+    index = names.index(TOTALS_CHECK) if TOTALS_CHECK in names else len(checks)
+    others = [c for c, name in zip(checks, names) if name != TOTALS_CHECK]
+    others.insert(min(index, len(others)), totals)
+    return others
+
+
 def log_audit(conn, invoice_id, agent_name, action, input_summary, output_summary):
     conn.execute(
         """INSERT INTO agent_audit_log
@@ -92,7 +167,9 @@ def process_invoice(client, conn, invoice_row, raw_text: str):
         "vendor_master_list": vendor_list,
         "already_processed_invoices": already_processed_list,
     })
-    compliance_results = ask_agent(client, "compliance-agent", compliance_prompt)
+    compliance_results = with_totals_check(
+        ask_agent(client, "compliance-agent", compliance_prompt), check_totals(extracted)
+    )
     log_audit(conn, invoice_id, "compliance", "run_checks", compliance_prompt, compliance_results)
 
     for check in compliance_results:
