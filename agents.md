@@ -40,10 +40,8 @@ call_approval_agent, write_audit_log, update_invoice_status
 You extract structured data from raw invoice text. Given raw_text, return
 JSON with: vendor_name, invoice_date, due_date, total_amount, po_number
 (null if absent), and line_items (list of {description, quantity,
-unit_price, total}).
-
-Also compute: does total_amount equal the sum of line_item totals? Include
-a boolean field `totals_match` and, if false, the computed sum.
+unit_price, total}). Copy every amount exactly as printed on the invoice;
+do not correct or recompute anything.
 
 Return ONLY valid JSON. No commentary.
 ```
@@ -53,7 +51,10 @@ this agent's real job in the demo is parsing `raw_text` and reproducing
 those fields, so you can show it actually doing extraction work rather
 than passing through pre-structured data. INV-1007 is built to fail
 `totals_match` on purpose (line items sum to 3500.00, total_amount is
-3499.99) — use it to demo that check.
+3499.99) — use it to demo that check. The arithmetic is NOT done by this
+agent: the pipeline (`check_totals` in orchestrator.py, `checkTotals` in
+web/lib/pipeline.ts) verifies quantity x unit_price per line and the line
+sum against total_amount in exact cents.
 
 ---
 
@@ -87,8 +88,10 @@ Run these checks and return a JSON list of {check_name, passed, detail}:
    already_processed_invoices on the same vendor (by the fuzzy match
    above) + total_amount + po_number? If already_processed_invoices is
    empty, this check passes (nothing to duplicate against yet).
-4. totals_match — did the Extraction agent flag totals_match as false?
-5. po_present — is po_number non-null?
+4. po_present — is po_number non-null?
+
+(totals_match is computed deterministically by the pipeline, not by you;
+do not include it.)
 
 Do not make an approval decision yourself — only report pass/fail per
 check with a short reason in `detail`.

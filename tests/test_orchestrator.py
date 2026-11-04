@@ -6,6 +6,7 @@ an in-memory SQLite database.
 """
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -186,7 +187,11 @@ class TestProcessInvoice:
         assert len(checks) == 5
         for check, expected in zip(checks, COMPLIANCE):
             assert check["check_name"] == expected["check_name"]
-            assert check["detail"] == expected["detail"]
+            if expected["check_name"] != "totals_match":
+                assert check["detail"] == expected["detail"]
+        totals = next(c for c in checks if c["check_name"] == "totals_match")
+        assert totals["passed"] == 1
+        assert totals["detail"] == "Line items sum to 2700.00, matching the invoice total to the cent."
 
         # decisions row.
         decision = in_memory_db.execute(
@@ -267,3 +272,76 @@ class TestProcessInvoice:
         assert "INV-W4" not in processed_ids
         for row in processed:
             assert set(row.keys()) == {"invoice_id", "vendor_id", "vendor_name", "total_amount", "po_number"}
+
+# --- check_totals (deterministic, no model involved) --------------------------
+
+MOCK_INVOICES = {
+    inv["invoice_id"]: inv
+    for inv in json.loads((Path(__file__).resolve().parent.parent / "data" / "mock_invoices.json").read_text())
+}
+
+
+class TestCheckTotals:
+    def test_catches_one_cent_mismatch_on_inv_1007(self):
+        result = orchestrator.check_totals(MOCK_INVOICES["INV-1007"])
+        assert result["passed"] is False
+        assert "Line items sum to 3500.00, but the invoice total is 3499.99 (off by 0.01)" in result["detail"]
+
+    @pytest.mark.parametrize("invoice_id", ["INV-1001", "INV-1002", "INV-1003", "INV-1004", "INV-1005", "INV-1006"])
+    def test_other_mock_invoices_pass(self, invoice_id):
+        assert orchestrator.check_totals(MOCK_INVOICES[invoice_id])["passed"] is True
+
+    def test_mock_raw_text_does_not_give_the_answer_away(self):
+        assert "do not match" not in MOCK_INVOICES["INV-1007"]["raw_text"].lower()
+
+    def test_float_noise_does_not_cause_false_mismatch(self):
+        # 500 * 1.2 == 600.0000000000001 and 0.1 + 0.2 != 0.3 in binary floats.
+        extracted = {
+            "total_amount": 600.3,
+            "line_items": [
+                {"description": "Brochures", "quantity": 500, "unit_price": 1.2, "total": 600.0},
+                {"description": "Stamp", "quantity": 1, "unit_price": 0.1, "total": 0.1},
+                {"description": "Sticker", "quantity": 1, "unit_price": 0.2, "total": 0.2},
+            ],
+        }
+        assert orchestrator.check_totals(extracted)["passed"] is True
+
+    def test_catches_line_where_quantity_times_price_is_off(self):
+        extracted = {
+            "total_amount": 3500.01,
+            "line_items": [{"description": "Review", "quantity": 14, "unit_price": 250.0, "total": 3500.01}],
+        }
+        result = orchestrator.check_totals(extracted)
+        assert result["passed"] is False
+        assert "Review: 14 x 250.0 = 3500.00, but the line total is 3500.01" in result["detail"]
+
+    def test_parses_currency_strings(self):
+        extracted = {
+            "total_amount": "$8,500.00",
+            "line_items": [{"description": "Hosting", "quantity": "1", "unit_price": "$8,500.00", "total": "8,500"}],
+        }
+        assert orchestrator.check_totals(extracted)["passed"] is True
+
+    def test_fails_when_nothing_to_verify(self):
+        assert orchestrator.check_totals({"total_amount": 100})["passed"] is False
+        assert orchestrator.check_totals({"line_items": [{"total": 100}]})["passed"] is False
+
+    def test_model_verdict_is_overridden(self, in_memory_db, mocker):
+        # Model claims the totals match; the numbers say otherwise.
+        extracted = {**EXTRACTED, "total_amount": 2699.99, "totals_match": True}
+        mocker.patch(
+            "orchestrator.ask_agent",
+            side_effect=[extracted, COMPLIANCE, {"decision": "flagged_for_review", "reason": "totals"}],
+        )
+        orchestrator.process_invoice(FakeClient("n/a"), in_memory_db, invoice_row(), "raw")
+
+        rows = in_memory_db.execute(
+            "SELECT check_name, passed FROM compliance_results WHERE invoice_id = 'INV-1001' ORDER BY id"
+        ).fetchall()
+        assert [r["check_name"] for r in rows] == [c["check_name"] for c in COMPLIANCE]
+        assert {r["check_name"]: r["passed"] for r in rows}["totals_match"] == 0
+
+    def test_check_appended_when_model_omits_it(self):
+        checks = [{"check_name": "po_present", "passed": True, "detail": "ok"}]
+        totals = {"check_name": "totals_match", "passed": False, "detail": "x"}
+        assert orchestrator.with_totals_check(checks, totals) == checks + [totals]

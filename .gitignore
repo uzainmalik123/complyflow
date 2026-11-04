@@ -31,3 +31,10 @@ web/next-env.d.ts
 
 # OS
 .DS_Store
+# /brag launch-video output (incl. timestamped re-runs)
+brag-output/
+brag-output-*/
+
+# Local agent skills (not part of the project)
+.claude/
+.opencode/

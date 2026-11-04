@@ -203,6 +203,75 @@ function lineItemsFrom(extracted: Record<string, unknown>): LineItem[] {
     .filter((item) => item.description !== "" || item.total !== 0);
 }
 
+const TOTALS_CHECK = "totals_match";
+
+// Money is compared in integer cents so float noise (500 * 1.2 = 600.0000000000001)
+// can't hide or invent a one-cent difference.
+function cents(value: number): number {
+  return Math.round(value * 100);
+}
+
+function dollars(valueInCents: number): string {
+  return (valueInCents / 100).toFixed(2);
+}
+
+// Deterministic replacement for the model's totals_match judgement: each line's
+// quantity x unit_price must equal its total, and the line totals must sum to the
+// invoice total, to the cent. The model only reads the numbers off the invoice.
+export function checkTotals(extracted: Record<string, unknown>): ComplianceCheck {
+  const result = (passed: boolean, detail: string): ComplianceCheck => ({
+    check_name: TOTALS_CHECK,
+    passed: passed ? 1 : 0,
+    detail,
+  });
+  const items = Array.isArray(extracted.line_items) ? extracted.line_items : [];
+  if (items.length === 0) {
+    return result(false, "No line items were extracted, so the total could not be verified.");
+  }
+  const invoiceTotal = asNumber(extracted.total_amount);
+  if (invoiceTotal === null) {
+    return result(false, "No invoice total was extracted, so it could not be verified.");
+  }
+
+  const problems: string[] = [];
+  let sum = 0;
+  items.forEach((raw, index) => {
+    const item = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+    const label = asString(item.description) ?? `Line ${index + 1}`;
+    const total = asNumber(item.total);
+    if (total === null) {
+      problems.push(`${label} has no line total`);
+      return;
+    }
+    sum += cents(total);
+    const quantity = asNumber(item.quantity);
+    const unitPrice = asNumber(item.unit_price);
+    if (quantity !== null && unitPrice !== null && cents(quantity * unitPrice) !== cents(total)) {
+      problems.push(
+        `${label}: ${quantity} x ${unitPrice} = ${dollars(cents(quantity * unitPrice))}, but the line total is ${dollars(cents(total))}`
+      );
+    }
+  });
+
+  const expected = cents(invoiceTotal);
+  if (sum !== expected) {
+    problems.push(
+      `Line items sum to ${dollars(sum)}, but the invoice total is ${dollars(expected)} (off by ${dollars(Math.abs(sum - expected))})`
+    );
+  }
+
+  if (problems.length > 0) return result(false, `${problems.join("; ")}.`);
+  return result(true, `Line items sum to ${dollars(sum)}, matching the invoice total to the cent.`);
+}
+
+// The model's own totals_match verdict is discarded in favour of checkTotals.
+function withTotalsCheck(checks: ComplianceCheck[], totals: ComplianceCheck): ComplianceCheck[] {
+  const index = checks.findIndex((check) => check.check_name === TOTALS_CHECK);
+  const others = checks.filter((check) => check.check_name !== TOTALS_CHECK);
+  others.splice(index === -1 ? others.length : index, 0, totals);
+  return others;
+}
+
 export function plainMessage(error: unknown): string {
   if (error instanceof Error) {
     const message = error.message.trim();
@@ -324,8 +393,9 @@ export async function processInvoice(
     };
 
     onStage?.("Running compliance checks...");
-    const complianceResults = toChecks(
-      await askAgent(compliance, JSON.stringify(compliancePayload), "compliance")
+    const complianceResults = withTotalsCheck(
+      toChecks(await askAgent(compliance, JSON.stringify(compliancePayload), "compliance")),
+      checkTotals(extracted)
     );
     const writeChecks = db.transaction((checks: ComplianceCheck[]) => {
       for (const check of checks) {
